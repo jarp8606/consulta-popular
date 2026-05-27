@@ -18,11 +18,11 @@ use Illuminate\Validation\Rule;
 class RegistroController extends Controller
 {
     /**
-     * Reglas de validación compartidas
+     * Reglas de validación compartidas (sin validación de unicidad)
      */
-    private function getReglasValidacion($id = null)
+    private function getReglasValidacion()
     {
-        $reglas = [
+        return [
             'nombre'     => ['required', 'string', 'max:255'],
             'snombre'    => ['nullable', 'string', 'max:255'],
             'apellido'   => ['required', 'string', 'max:255'],
@@ -34,37 +34,12 @@ class RegistroController extends Controller
             'genero'     => ['required', 'string'],
             'edad'       => ['required', 'numeric', 'min:0', 'max:120'],
             'nacimiento' => ['required', 'date', 'before_or_equal:today'],
-            'numext'     => ['nullable', 'numeric'],
+            'numext'     => ['required', 'numeric'],
             'numint'     => ['nullable', 'numeric'],
             'telefono'   => ['required', 'digits:10'],
             'beneficios' => ['nullable', 'array'],
             'beneficios.*'=> ['numeric', 'exists:beneficios,id'],
         ];
-
-        // Regla de unicidad: Verificar si ya existe un beneficiario con los mismos datos
-        // Solo aplicar si NO es fuerza bruta
-        if (!$this->isFuerzaBruta(request())) {
-            $reglas['nombre'][] = function ($attribute, $value, $fail) use ($id) {
-                $value = mb_strtoupper(trim($value), 'UTF-8');
-                $apellido = mb_strtoupper(trim(request()->apellido), 'UTF-8');
-                $nacimiento = request()->nacimiento;
-                
-                $query = Registro::where('nombre', $value)
-                    ->where('apellido', $apellido)
-                    ->where('nacimiento', $nacimiento);
-                
-                // Si es actualización, excluir el registro actual
-                if ($id) {
-                    $query->where('id', '!=', $id);
-                }
-                
-                if ($query->exists()) {
-                    $fail('Ya existe un beneficiario registrado con el mismo nombre, apellido y fecha de nacimiento.');
-                }
-            };
-        }
-
-        return $reglas;
     }
 
     /**
@@ -80,19 +55,13 @@ class RegistroController extends Controller
             'nacimiento.before_or_equal' => 'La fecha de nacimiento debe ser inferior o igual a la fecha actual.',
             'edad.min'                   => 'La edad debe ser un número positivo.',
             'edad.max'                   => 'La edad no puede ser mayor a 120 años.',
-            'genero.in'                  => 'El género seleccionado no es válido.',
+            'genero.in'                  => 'El género seleccionado no es válido. Las opciones válidas son: Masculino, Femenino u Otro.',
             'required'                   => 'El campo :attribute es obligatorio.',
             'numeric'                    => 'El campo :attribute debe ser numérico.',
             'digits'                     => 'El campo :attribute debe tener exactamente :digits dígitos.',
+            'genero.required'            => 'Por favor seleccione un género.',
+            'numext.required'            => 'El número exterior es obligatorio.',
         ];
-    }
-
-    /**
-     * Verificar si es modo fuerza bruta
-     */
-    private function isFuerzaBruta(Request $request)
-    {
-        return $request->boolean('fuerza_bruta');
     }
 
     /**
@@ -114,12 +83,17 @@ class RegistroController extends Controller
     private function limpiarYPrepararDatos(Request $request)
     {
         // Limpiar tildes de los campos de texto
-        $camposTexto = ['nombre', 'snombre', 'apellido', 'sapellido', 'colonia', 'calle', 'municipio', 'genero'];
+        $camposTexto = ['nombre', 'snombre', 'apellido', 'sapellido', 'colonia', 'calle', 'municipio'];
         
         foreach ($camposTexto as $campo) {
             if ($request->has($campo) && is_string($request->$campo)) {
                 $request->merge([$campo => $this->limpiarTildes($request->$campo)]);
             }
+        }
+        
+        // Asegurar que el género venga en mayúsculas
+        if ($request->has('genero') && is_string($request->genero)) {
+            $request->merge(['genero' => mb_strtoupper(trim($request->genero), 'UTF-8')]);
         }
         
         return $request;
@@ -159,6 +133,29 @@ class RegistroController extends Controller
         }
         
         return $data;
+    }
+
+    /**
+     * Detectar duplicados (usando LIKE para insensibilidad a mayúsculas/minúsculas)
+     */
+    private function detectarDuplicados($datos, $excluirId = null)
+    {
+        // Convertir a mayúsculas para comparación consistente
+        $nombre = mb_strtoupper(trim($datos['nombre']), 'UTF-8');
+        $apellido = mb_strtoupper(trim($datos['apellido']), 'UTF-8');
+        $nacimiento = $datos['nacimiento'];
+        
+        // Usar LIKE para buscar sin importar mayúsculas/minúsculas
+        // PostgreSQL usa ILIKE, MySQL/MariaDB usa LIKE que ya es insensible en algunos casos
+        $query = Registro::whereRaw('UPPER(nombre) = ?', [$nombre])
+            ->whereRaw('UPPER(apellido) = ?', [$apellido])
+            ->where('nacimiento', $nacimiento);
+        
+        if ($excluirId) {
+            $query->where('id', '!=', $excluirId);
+        }
+        
+        return $query->get();
     }
 
     /**
@@ -213,10 +210,13 @@ class RegistroController extends Controller
      */
     public function store(Request $request)
     {
+        // LEER BANDERA PRIMERO: Extraemos el booleano antes de la validación estricta
+        $fuerzaBruta = $request->boolean('fuerza_bruta');
+
         // 1. Limpiar tildes de los datos
         $request = $this->limpiarYPrepararDatos($request);
         
-        // 2. Validar los datos usando las reglas
+        // 2. Validar los datos usando las reglas (SIN validación de unicidad)
         $datosValidados = $request->validate(
             $this->getReglasValidacion(),
             $this->getMensajesPersonalizados()
@@ -231,11 +231,24 @@ class RegistroController extends Controller
             $datosValidados['telefono'] = $this->formatearTelefono($datosValidados['telefono']);
         }
 
-        // 5. Convertir a mayúsculas (excepto campos específicos)
+        // 5. DETECTOR DE DUPLICADOS (Se ignora por completo si $fuerzaBruta es true)
+        if (!$fuerzaBruta) {
+            $duplicados = $this->detectarDuplicados($datosValidados);
+            
+            // Si encontramos al menos un registro idéntico, frenamos la inserción
+            if ($duplicados->isNotEmpty()) {
+                return back()->with([
+                    'advertencia' => '¡Atención! Ya existen personas registradas con datos idénticos.',
+                    'coincidencias' => $duplicados,
+                ]);
+            }
+        }
+
+        // 6. Convertir a mayúsculas
         $datosFinales = $this->convertirMayusculas($datosValidados);
         $datosFinales['id_user'] = Auth::id();
 
-        // 6. Guardar en base de datos
+        // 7. Guardar en base de datos
         DB::beginTransaction();
         
         try {
@@ -288,15 +301,18 @@ class RegistroController extends Controller
      */
     public function update(Request $request, string $id)
     {
+        // LEER BANDERA PRIMERO para actualización también
+        $fuerzaBruta = $request->boolean('fuerza_bruta');
+        
         // 1. Encontrar el registro
         $beneficiario = Registro::findOrFail($id);
         
         // 2. Limpiar tildes de los datos
         $request = $this->limpiarYPrepararDatos($request);
         
-        // 3. Validar los datos usando las reglas con el ID para excluir el registro actual
+        // 3. Validar los datos usando las reglas (SIN validación de unicidad)
         $datosValidados = $request->validate(
-            $this->getReglasValidacion($id),
+            $this->getReglasValidacion(),
             $this->getMensajesPersonalizados()
         );
         
@@ -304,16 +320,29 @@ class RegistroController extends Controller
         $beneficiosIds = $datosValidados['beneficios'] ?? [];
         unset($datosValidados['beneficios']);
 
-        // 5. Formatear teléfono
+        // 5. DETECTOR DE DUPLICADOS para actualización (Se ignora por completo si $fuerzaBruta es true)
+        if (!$fuerzaBruta) {
+            $duplicados = $this->detectarDuplicados($datosValidados, $id);
+            
+            // Si encontramos al menos un registro idéntico, frenamos la actualización
+            if ($duplicados->isNotEmpty()) {
+                return back()->with([
+                    'advertencia' => '¡Atención! Ya existen personas registradas con datos idénticos.',
+                    'coincidencias' => $duplicados,
+                ]);
+            }
+        }
+
+        // 6. Formatear teléfono
         if (isset($datosValidados['telefono'])) {
             $datosValidados['telefono'] = $this->formatearTelefono($datosValidados['telefono']);
         }
 
-        // 6. Convertir a mayúsculas (excepto campos específicos)
+        // 7. Convertir a mayúsculas
         $datosFinales = $this->convertirMayusculas($datosValidados);
         $datosFinales['id_user'] = Auth::id();
 
-        // 7. Actualizar en base de datos
+        // 8. Actualizar en base de datos
         DB::beginTransaction();
         
         try {
