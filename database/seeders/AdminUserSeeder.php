@@ -10,23 +10,34 @@ use Spatie\Permission\Models\Role;
 
 class AdminUserSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
-public function run(): void
-{
-    // 1. Borramos el usuario si ya existe (así evitamos el error de duplicado)
-  
+    public function run(): void
+    {
+        // 1. ELIMINACIÓN AGRESIVA: Borramos el usuario de prueba antes de empezar
+        User::where('email', 'test@example.com')->delete();
 
-    // 2. Creamos el usuario desde cero
-    $user = \App\Models\User::create([
-        'name' => 'pedro silva',
-        'email' => 'jarp@gmail.com',
-        'password' => Hash::make('Mexico2026'),
-    ]);
+        // 2. Aseguramos el rol
+        $role = Role::firstOrCreate(['name' => 'admin']);
 
-    // 3. Asignamos el rol
-    $role = Role::firstOrCreate(['name' => 'admin']);
-    $user->assignRole($role);
-}
+        $admins = [
+            [
+                'email' => 'jarp@gmail.com',
+                'name' => 'pedro silva'
+            ]
+            // Ya no incluimos test@example.com aquí, porque lo borramos arriba
+        ];
+
+        foreach ($admins as $adminData) {
+            $user = User::updateOrCreate(
+                ['email' => $adminData['email']],
+                [
+                    'name' => $adminData['name'],
+                    'password' => Hash::make('Mexico2026'),
+                ]
+            );
+
+            if (!$user->hasRole('admin')) {
+                $user->assignRole($role);
+            }
+        }
+    }
 }
