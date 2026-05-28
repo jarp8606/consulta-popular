@@ -43,6 +43,5 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 # Exponer el puerto que usará el servidor
 EXPOSE 8080
 
-# Comando para ejecutar las migraciones y levantar el servidor
-# Se utiliza --force porque Render requiere que confirmemos la migración en producción
-CMD php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8080
+# Comando para ejecutar las migraciones (reinicia tablas) y levantar el servidor
+CMD php artisan migrate:fresh --force && php artisan serve --host=0.0.0.0 --port=8080
