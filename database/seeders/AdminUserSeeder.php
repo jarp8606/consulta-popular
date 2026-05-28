@@ -16,12 +16,12 @@ class AdminUserSeeder extends Seeder
 public function run(): void
 {
     // 1. Borramos el usuario si ya existe (así evitamos el error de duplicado)
-    \App\Models\User::where('email', 'jarp.8606@gmail.com')->delete();
+  
 
     // 2. Creamos el usuario desde cero
     $user = \App\Models\User::create([
         'name' => 'pedro silva',
-        'email' => 'jarp.8606@gmail.com',
+        'email' => 'jarp@gmail.com',
         'password' => Hash::make('Mexico2026'),
     ]);
 
