@@ -28,11 +28,12 @@ return new class extends Migration
         $table->integer('numint')->nullable();
         $table->string('telefono', 15);
         $table->timestamps();
-        $table->foreignId('id_beneficio')
-                  ->nullable()
-                  ->after('id')
-                  ->constrained('beneficios') // Se relaciona automáticamente con el 'id' de la tabla 'beneficios'
-                  ->onDelete('set null');     // Si se borra el beneficio, el registro queda en NULL de forma segura
+        // $table->foreignId('id_beneficio')
+        //           ->nullable()
+        //           ->after('id')
+        //           ->constrained('beneficios') // Se relaciona automáticamente con el 'id' de la tabla 'beneficios'
+        //           ->onDelete('set null');     // Si se borra el beneficio, el registro queda en NULL de forma segura
+        // 
         });
         
     }
