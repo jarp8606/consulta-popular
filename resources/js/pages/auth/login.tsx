@@ -108,12 +108,12 @@ export default function Login({ status }: any) {
                         </button>
                     </form>
 
-                    <div className="mt-6 text-center text-sm text-gray-600">
+                    {/* <div className="mt-6 text-center text-sm text-gray-600">
                         ¿No tienes una cuenta?{' '}
                         <Link href={route('register')} className="text-[#1d3557] font-semibold hover:underline">
                             Regístrate
                         </Link>
-                    </div>
+                    </div> */}
                 </div>
 
                 <div className="bg-[#f9fafb] border-t border-[#e5e7eb] py-3 text-center">

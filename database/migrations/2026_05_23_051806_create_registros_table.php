@@ -27,6 +27,7 @@ return new class extends Migration
         $table->integer('numext');
         $table->integer('numint')->nullable();
         $table->string('telefono', 15);
+        $table->boolean('papa')->default(false);
         $table->timestamps();
         // $table->foreignId('id_beneficio')
         //           ->nullable()

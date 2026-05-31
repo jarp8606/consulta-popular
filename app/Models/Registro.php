@@ -31,7 +31,8 @@ class Registro extends Model
         'numext',
         'numint',
         'telefono',
-        'id_beneficio',
+        'papa',
+        // 'id_beneficio',
         'id_user',
     ];
 
