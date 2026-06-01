@@ -4,7 +4,7 @@ import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link, usePage } from '@inertiajs/react'; // Asegúrate de importar usePage
-import { LayoutGrid, Users } from 'lucide-react';
+import { LayoutGrid, Users,Notebook } from 'lucide-react';
 import AppLogo from './app-logo';
 
 const mainNavItems: NavItem[] = [
@@ -26,8 +26,14 @@ export function AppSidebar() {
 
     // Lógica condicional: solo agregamos el ítem si el usuario es admin
     if (auth.user?.roles?.includes('admin')) {
-        footerNavItems.push({
-            title: 'Agregar encuestador',
+        footerNavItems.push(
+        {
+            title: 'Agregar Beneficio',
+            url: route('admin.beneficios.index'),
+            icon:Notebook,
+        },
+    {
+            title: 'Agregar Encuestador',
             url: route('admin.users.index'),
             icon: Users,
         });

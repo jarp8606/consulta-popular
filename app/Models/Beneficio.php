@@ -15,6 +15,10 @@ class Beneficio extends Model
         'activo',
     ];
 
+    protected $casts = [
+        'activo' => 'boolean', 
+    ];
+
     /**
      * Obtener todos los ciudadanos asociados a este beneficio (Muchos a Muchos).
      */

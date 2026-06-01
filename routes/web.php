@@ -5,6 +5,7 @@ use Inertia\Inertia;
 use App\Http\Controllers\RegistroController;
 use App\Http\Controllers\ColoniaController;
 use App\Http\Controllers\Admin\UserController; 
+use App\Http\Controllers\BeneficioController; 
 use App\Models\Registro;
 
 Route::get('/', function () {
@@ -39,7 +40,7 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['role:admin'])->group(function () {
         Route::get('/admin/usuarios', [UserController::class, 'index'])->name('admin.users.index');
         Route::post('/admin/usuarios', [UserController::class, 'store'])->name('admin.users.store');
-    });
+        Route::resource('/admin/beneficio', BeneficioController::class)->names('admin.beneficios');    });
 });
 
 require __DIR__.'/settings.php';
