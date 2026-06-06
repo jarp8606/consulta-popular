@@ -5,7 +5,8 @@ use Inertia\Inertia;
 use App\Http\Controllers\RegistroController;
 use App\Http\Controllers\ColoniaController;
 use App\Http\Controllers\Admin\UserController; 
-use App\Http\Controllers\BeneficioController; 
+use App\Http\Controllers\BeneficioController;
+use App\Http\Controllers\Admin\PreguntaController; // ← RUTA CORREGIDA
 use App\Models\Registro;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Artisan;
@@ -46,6 +47,11 @@ Route::middleware(['auth'])->group(function () {
         Route::get('api/beneficiarios/{id}/beneficios', function ($id) {
             return Registro::findOrFail($id)->beneficios()->pluck('beneficios.id');
         })->name('api.beneficiarios.beneficios');
+
+        Route::get('api/beneficiarios/{id}/respuestas', function ($id) {
+            $beneficiario = Registro::with(['respuestas.catalogo'])->findOrFail($id);
+            return response()->json($beneficiario->respuestas);
+        })->name('api.beneficiarios.respuestas');
     });
 
     // 2. RUTAS DE CREACIÓN Y EDICIÓN
@@ -61,6 +67,17 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/admin/usuarios', [UserController::class, 'index'])->name('admin.users.index');
         Route::post('/admin/usuarios', [UserController::class, 'store'])->name('admin.users.store');
         Route::resource('/admin/beneficio', BeneficioController::class)->names('admin.beneficios');
+    });
+
+    // 4. RUTAS DE PREGUNTAS (Estructura: /preguntas)
+    Route::middleware(['role:admin'])->prefix('preguntas')->name('preguntas.')->group(function () {
+        Route::get('/', [PreguntaController::class, 'index'])->name('index');
+        Route::get('/create', [PreguntaController::class, 'create'])->name('create');
+        Route::post('/', [PreguntaController::class, 'store'])->name('store');
+        Route::get('/{id}/edit', [PreguntaController::class, 'edit'])->name('edit');
+        Route::put('/{id}', [PreguntaController::class, 'update'])->name('update');
+        Route::delete('/{id}', [PreguntaController::class, 'destroy'])->name('destroy');
+        Route::patch('/{id}/toggle', [PreguntaController::class, 'toggle'])->name('toggle');
     });
 });
 
