@@ -32,13 +32,18 @@ class Registro extends Model
         'numint',
         'telefono',
         'papa',
-        // 'id_beneficio',
-        'id_user',
-    ];
+            // 'id_beneficio',
+            'id_user',
+        ];
 
-    public function beneficios(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
-{
-    return $this->belongsToMany(Beneficio::class, 'beneficio_registro', 'registro_id', 'beneficio_id')
-                ->withTimestamps();
-}
-}
+        public function beneficios(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Beneficio::class, 'beneficio_registro', 'registro_id', 'beneficio_id')
+                    ->withTimestamps();
+    }
+    public function respuestas() {
+       // Asegúrate que el modelo de destino sea Pregunta::class
+    // Y que la tabla intermedia se llame 'respuesta'
+    return $this->hasMany(Respuesta::class, 'registro_id');
+    }
+    }

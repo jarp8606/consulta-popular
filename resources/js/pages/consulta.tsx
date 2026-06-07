@@ -11,15 +11,33 @@ import { useAutocompletado } from '@/hooks/useAutocompletado';
 const MySwal = withReactContent(Swal);
 
 // --- INTERFACES ESTÁNDAR ---
-interface BreadcrumbItem { title: string; href: string; }
-interface Beneficiario {
-    id: number; nombre: string; snombre: string | null; apellido: string; sapellido: string | null;
-    colonia: string; telefono: string | null; calle: string; numint: string | null; numext: string | null;
-    municipio: string; cp: string | null; nacimiento: string; edad: string | null; tarjeta: string | null; genero: string;
+interface BreadcrumbItem { 
+    title: string; 
+    href: string; 
 }
-interface BeneficioDisponible { id: number; nombre: string; descripcion: string | null; }
+
+interface Pregunta {
+    id: number;
+    descripcion: string;
+    activa: boolean;
+}
+
+interface RespuestaUsuario {
+    id?: number;
+    registro_id?: number;
+    pregunta_id: number;
+    catalogo_id: number | null;
+    valor_extra: string | null;
+    detalle: string | null;
+    catalogo?: {
+        id: number;
+        nombre: string;
+        pregunta_id: number;
+    };
+}
 
 declare const route: any;
+
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Dashboard', href: '/dashboard' },
     { title: 'Filtro y Actualización', href: '#' },
@@ -48,10 +66,7 @@ export default function ConsultaDinamica() {
     const beneficiarios: any[] = props.beneficiarios || [];
     const filtros = props.filtros || {};
     const haFiltrado = !!(filtros.nombre || filtros.apellido || filtros.nacimiento);
-    
-    const beneficiosDisponibles: BeneficioDisponible[] = Array.isArray(props.beneficios) 
-        ? props.beneficios 
-        : Object.values(props.beneficios || {});
+    const preguntas: Pregunta[] = props.preguntas || [];
 
     // Estados para la consulta de filtros
     const [fNombre, setFNombre] = useState(filtros.nombre || '');
@@ -64,9 +79,24 @@ export default function ConsultaDinamica() {
 
     // Formulario Inyectado controlado de Inertia
     const { data, setData, processing, errors, reset, clearErrors } = useForm({
-        nombre: '', snombre: '', apellido: '', sapellido: '', colonia: '', telefono: '',
-        calle: '', numint: '', numext: '', municipio: '', cp: '', nacimiento: '',
-        edad: '', tarjeta: '', genero: '', beneficios: [] as number[],
+        nombre: '', 
+        snombre: '', 
+        apellido: '', 
+        sapellido: '', 
+        colonia: '', 
+        telefono: '',
+        calle: '', 
+        numint: '', 
+        numext: '', 
+        municipio: '', 
+        cp: '', 
+        nacimiento: '',
+        edad: '', 
+        tarjeta: '', 
+        genero: '',
+        respuestas: {} as Record<number, string>,
+        catalogo_ids: {} as Record<number, number | null>,
+        detalles: {} as Record<number, string>,
     });
 
     // Limpiar errores del servidor cuando se selecciona un nuevo beneficiario
@@ -93,28 +123,59 @@ export default function ConsultaDinamica() {
         const proxyB = normalizarObjeto(b);
         
         try {
-            const response = await axios.get(`/api/beneficiarios/${proxyB.id}/beneficios`);
-            const beneficiosIds = response.data.map((item: any) => 
-                typeof item === 'object' && item !== null ? (item.id ?? item.beneficio_id) : item
-            );
+            const url = `/api/beneficiarios/${proxyB.id}/respuestas`;
+            const responseRespuestas = await axios.get(url);
+            const respuestasData: RespuestaUsuario[] = Array.isArray(responseRespuestas.data) ? responseRespuestas.data : [];
+            
+            const respuestasFormateadas: Record<number, string> = {};
+            const catalogoIdsFormateados: Record<number, number | null> = {};
+            const detallesFormateados: Record<number, string> = {};
+            
+            respuestasData.forEach((item: RespuestaUsuario) => {
+                if (item.valor_extra) {
+                    respuestasFormateadas[item.pregunta_id] = item.valor_extra;
+                }
+                
+                if (item.catalogo_id) {
+                    catalogoIdsFormateados[item.pregunta_id] = item.catalogo_id;
+                }
+                
+                // Para la pregunta 6, el detalle puede venir del catálogo o del campo detalle
+                if (item.pregunta_id === 6) {
+                    if (item.catalogo && item.catalogo.nombre) {
+                        detallesFormateados[item.pregunta_id] = item.catalogo.nombre;
+                    } else if (item.detalle) {
+                        detallesFormateados[item.pregunta_id] = item.detalle;
+                    }
+                } else {
+                    // Para otras preguntas, solo mostrar detalle si es SI
+                    if (item.catalogo && item.catalogo.nombre && item.valor_extra === 'SI') {
+                        detallesFormateados[item.pregunta_id] = item.catalogo.nombre;
+                    } else if (item.detalle && item.valor_extra === 'SI') {
+                        detallesFormateados[item.pregunta_id] = item.detalle;
+                    }
+                }
+            });
 
             setData({
-                nombre: proxyB.nombre,
-                snombre: proxyB.snombre,
-                apellido: proxyB.apellido,
-                sapellido: proxyB.sapellido,
-                colonia: proxyB.colonia,
-                telefono: proxyB.telefono,
-                calle: proxyB.calle,
-                numint: proxyB.numint,
-                numext: proxyB.numext,
-                municipio: proxyB.municipio,
-                cp: proxyB.cp,
-                nacimiento: proxyB.nacimiento,
-                edad: proxyB.edad,
-                tarjeta: proxyB.tarjeta,
-                genero: proxyB.genero,
-                beneficios: beneficiosIds,
+                nombre: proxyB.nombre || '',
+                snombre: proxyB.snombre || '',
+                apellido: proxyB.apellido || '',
+                sapellido: proxyB.sapellido || '',
+                colonia: proxyB.colonia || '',
+                telefono: proxyB.telefono || '',
+                calle: proxyB.calle || '',
+                numint: proxyB.numint || '',
+                numext: proxyB.numext || '',
+                municipio: proxyB.municipio || '',
+                cp: proxyB.cp || '',
+                nacimiento: proxyB.nacimiento || '',
+                edad: proxyB.edad || '',
+                tarjeta: proxyB.tarjeta || '',
+                genero: proxyB.genero || '',
+                respuestas: respuestasFormateadas,
+                catalogo_ids: catalogoIdsFormateados,
+                detalles: detallesFormateados,
             });
 
             setTimeout(() => {
@@ -122,12 +183,13 @@ export default function ConsultaDinamica() {
                 setCargandoDatos(false); 
             }, 80);
 
-        } catch (error) {
+        } catch (error: any) {
             setCargandoDatos(false);
-            console.error('Error al recuperar pivotes de beneficios:', error);
+            console.error('Error al recuperar respuestas:', error);
+            
             MySwal.fire({
                 title: 'Error',
-                text: 'No se pudieron cargar los beneficios asignados',
+                text: 'No se pudieron cargar las respuestas del beneficiario',
                 icon: 'error',
                 confirmButtonColor: '#EF4444'
             });
@@ -137,7 +199,7 @@ export default function ConsultaDinamica() {
     const handleEliminarRegistro = (id: number, nombreCompleto: string) => {
         MySwal.fire({
             title: '¿Está seguro de eliminar?',
-            text: `El registro de "${nombreCompleto}" y sus beneficios asignados se borrarán permanentemente.`,
+            text: `El registro de "${nombreCompleto}" se borrará permanentemente.`,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#EF4444',
@@ -173,10 +235,6 @@ export default function ConsultaDinamica() {
         });
     };
 
-    const handleCheckboxChange = (id: number, checked: boolean) => {
-        setData('beneficios', checked ? [...data.beneficios, id] : data.beneficios.filter(bId => bId !== id));
-    };
-
     const handleUpdateSubmit = (e: FormEvent) => {
         e.preventDefault();
         const bId = beneficiarioSeleccionado?.id ?? beneficiarioSeleccionado?.ID;
@@ -190,15 +248,19 @@ export default function ConsultaDinamica() {
             return;
         }
 
-        // Limpiar errores anteriores antes de enviar
         setErroresServidor({});
         clearErrors();
 
-        // Usamos router.put correctamente
-        router.put(route('consulta.update', bId), data, {
+        const dataToSend = {
+            ...data,
+            respuestas: data.respuestas,
+            catalogo_ids: data.catalogo_ids,
+            detalles: data.detalles
+        };
+
+        router.put(route('consulta.update', bId), dataToSend, {
             preserveScroll: true,
             onSuccess: () => {
-                // Solo mostramos éxito con SweetAlert, sin alerta de error
                 MySwal.fire({ 
                     title: '¡Registro Actualizado!', 
                     text: 'Los cambios fueron aplicados con éxito.', 
@@ -210,17 +272,14 @@ export default function ConsultaDinamica() {
                 setBeneficiarioSeleccionado(null);
                 reset();
                 setErroresServidor({});
-                // Recargar la página para actualizar la tabla
                 router.reload({ only: ['beneficiarios'] });
             },
             onError: (errors) => {
                 console.error("Errores del servidor:", errors);
                 
-                // Guardar errores del servidor para mostrar en el formulario
                 if (errors && Object.keys(errors).length > 0) {
                     setErroresServidor(errors);
                     
-                    // Scroll al primer campo con error
                     const firstErrorField = Object.keys(errors)[0];
                     const errorElement = document.getElementById(`field-${firstErrorField}`);
                     if (errorElement) {
@@ -229,8 +288,6 @@ export default function ConsultaDinamica() {
                     }
                 }
                 
-                // NO mostrar alerta de error de validación
-                // Solo mostramos alerta para errores de conexión o del sistema
                 if (errors && errors.message && typeof errors.message === 'string') {
                     MySwal.fire({
                         title: 'Error del sistema',
@@ -243,16 +300,92 @@ export default function ConsultaDinamica() {
         });
     };
 
-    // Función para obtener el mensaje de error de un campo específico
     const getFieldError = (fieldName: string): string | undefined => {
+        if (fieldName.includes('.')) {
+            const [parent, child] = fieldName.split('.');
+            if (erroresServidor[parent] && typeof erroresServidor[parent] === 'object') {
+                return (erroresServidor[parent] as any)[child];
+            }
+            return undefined;
+        }
         return erroresServidor[fieldName] || errors[fieldName];
+    };
+
+    const handleRespuestaChange = (preguntaId: number, valor: string) => {
+        setData('respuestas', {
+            ...data.respuestas,
+            [preguntaId]: valor
+        });
+        
+        // Para la pregunta 6: si cambia a "SI", limpiar el detalle de NO
+        if (preguntaId === 6) {
+            if (valor === 'SI') {
+                // Si responde SI, limpiamos el detalle (porque solo aplica para NO)
+                setData('detalles', {
+                    ...data.detalles,
+                    [preguntaId]: ''
+                });
+                setData('catalogo_ids', {
+                    ...data.catalogo_ids,
+                    [preguntaId]: null
+                });
+            }
+            // Si responde NO, mantenemos el detalle para que el usuario lo llene
+        } else {
+            // Para otras preguntas: si cambia a "NO", limpiar el detalle
+            if (valor === 'NO') {
+                setData('detalles', {
+                    ...data.detalles,
+                    [preguntaId]: ''
+                });
+                setData('catalogo_ids', {
+                    ...data.catalogo_ids,
+                    [preguntaId]: null
+                });
+            }
+        }
+        
+        if (erroresServidor[`respuestas.${preguntaId}`]) {
+            const newErrors = { ...erroresServidor };
+            delete newErrors[`respuestas.${preguntaId}`];
+            setErroresServidor(newErrors);
+        }
+    };
+
+    const handleDetalleChange = (preguntaId: number, valor: string) => {
+        setData('detalles', {
+            ...data.detalles,
+            [preguntaId]: valor
+        });
+    };
+
+    // Verificar si debe mostrar el campo de detalle para una pregunta específica
+    const shouldShowDetalle = (pregunta: Pregunta) => {
+        const respuesta = data.respuestas[pregunta.id];
+        
+        if (pregunta.id === 6) {
+            // Para pregunta 6: mostrar el campo cuando la respuesta es "NO"
+            return respuesta === 'NO';
+        } else {
+            // Para otras preguntas: mostrar el campo cuando la respuesta es "SI"
+            return respuesta === 'SI';
+        }
+    };
+
+    // Obtener el placeholder para el campo de detalle
+    const getDetallePlaceholder = (pregunta: Pregunta) => {
+        if (pregunta.id === 6) {
+            return "Por favor, especifique el motivo o situación...";
+        } else {
+            return "Por favor, proporcione más detalles...";
+        }
     };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
             <Head title="Consulta y Actualización" />
 
-            <div className="w-full space-y-6">
+            <div className="w-full space-y-6 p-10">
                 {/* FORMULARIO BUSCADOR */}
                 <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
                     <div className="mb-4 border-b border-neutral-100 pb-3">
@@ -378,26 +511,8 @@ export default function ConsultaDinamica() {
                             </button>
                         </div>
                         
-                        {/* Resumen de errores (opcional, muestra un contador)
-                        {Object.keys(erroresServidor).length > 0 && (
-                            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3">
-                                <p className="text-sm font-semibold text-red-800">
-                                    Por favor corrige los siguientes errores:
-                                </p>
-                                <ul className="mt-1 list-disc list-inside text-xs text-red-700">
-                                    {Object.entries(erroresServidor).slice(0, 3).map(([campo, error]) => (
-                                        <li key={campo}>
-                                            <strong>{campo}:</strong> {error as string}
-                                        </li>
-                                    ))}
-                                    {Object.keys(erroresServidor).length > 3 && (
-                                        <li>...y {Object.keys(erroresServidor).length - 3} errores más</li>
-                                    )}
-                                </ul>
-                            </div>
-                        )} */}
-                        
                         <form onSubmit={handleUpdateSubmit} className="space-y-5">
+                            {/* Datos Personales */}
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                                 <div id="field-nombre">
                                     <InputField 
@@ -407,7 +522,6 @@ export default function ConsultaDinamica() {
                                         value={data.nombre} 
                                         onChange={(e) => {
                                             setData('nombre', e.target.value);
-                                            // Limpiar error específico cuando el usuario escribe
                                             if (erroresServidor.nombre) {
                                                 const newErrors = { ...erroresServidor };
                                                 delete newErrors.nombre;
@@ -458,6 +572,7 @@ export default function ConsultaDinamica() {
                                 </div>
                             </div>
                             
+                            {/* Dirección */}
                             <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
                                 <div className="relative" id="field-colonia">
                                     <InputField 
@@ -531,7 +646,7 @@ export default function ConsultaDinamica() {
                                 </div>
                                 <div id="field-numext">
                                     <InputField 
-                                        label="Num Ext" 
+                                        label="Número Exterior" 
                                         id="numext" 
                                         type="text" 
                                         value={data.numext} 
@@ -541,7 +656,7 @@ export default function ConsultaDinamica() {
                                 </div>
                                 <div id="field-numint">
                                     <InputField 
-                                        label="Num Int" 
+                                        label="Número Interior" 
                                         id="numint" 
                                         type="text" 
                                         value={data.numint} 
@@ -551,6 +666,7 @@ export default function ConsultaDinamica() {
                                 </div>
                             </div>
                             
+                            {/* Datos adicionales */}
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-5">
                                 <div id="field-cp">
                                     <InputField 
@@ -600,30 +716,76 @@ export default function ConsultaDinamica() {
                                     />
                                 </div>
                             </div>
-                            
-                            <div className="border-t border-neutral-100 pt-4">
-                                <h4 className="text-xs font-semibold text-neutral-700 uppercase mb-2">Programas Sociales Asignados</h4>
-                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                                    {beneficiosDisponibles.map(b => (
-                                        <label key={b.id} className="flex items-center gap-3 rounded border border-neutral-200 p-2.5 hover:bg-neutral-50 cursor-pointer text-xs">
-                                            <input 
-                                                type="checkbox" 
-                                                className="h-4 w-4 rounded border-neutral-300 text-[#1FB7E9] focus:ring-[#1FB7E9]" 
-                                                checked={data.beneficios.includes(b.id)} 
-                                                onChange={(e) => handleCheckboxChange(b.id, e.target.checked)} 
-                                            />
-                                            <div>
-                                                <span className="font-semibold block uppercase">{b.nombre}</span>
+
+                            {/* SECCIÓN DE RESPUESTAS CON RADIO BUTTONS */}
+                            {preguntas.length > 0 && (
+                                <div className="border-t border-neutral-100 pt-4 mt-4">
+                                    <h4 className="text-sm font-bold text-neutral-800 mb-4">
+                                        Evaluación Social - {preguntas.length} Preguntas
+                                    </h4>
+                                    <div className="space-y-4">
+                                        {preguntas.map((pregunta, index) => (
+                                            <div key={pregunta.id} className="border border-neutral-200 rounded-lg p-4 bg-neutral-50/30">
+                                                <label className="block text-sm font-semibold text-neutral-800 mb-3">
+                                                    {index + 1}. {pregunta.descripcion}
+
+
+                                                </label>
+                                                
+                                                <div className="flex gap-6 mb-3">
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name={`pregunta_${pregunta.id}`}
+                                                            value="SI"
+                                                            checked={data.respuestas[pregunta.id] === 'SI'}
+                                                            onChange={(e) => handleRespuestaChange(pregunta.id, e.target.value)}
+                                                            className="w-4 h-4 text-[#1FB7E9] focus:ring-[#1FB7E9]"
+                                                        />
+                                                        <span className="text-sm text-neutral-700">Sí</span>
+                                                    </label>
+                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                        <input
+                                                            type="radio"
+                                                            name={`pregunta_${pregunta.id}`}
+                                                            value="NO"
+                                                            checked={data.respuestas[pregunta.id] === 'NO'}
+                                                            onChange={(e) => handleRespuestaChange(pregunta.id, e.target.value)}
+                                                            className="w-4 h-4 text-[#1FB7E9] focus:ring-[#1FB7E9]"
+                                                        />
+                                                        <span className="text-sm text-neutral-700">No</span>
+                                                    </label>
+                                                </div>
+                                                
+                                                {/* Campo de detalle/descripción con lógica especial para pregunta 6 */}
+                                                {shouldShowDetalle(pregunta) && (
+                                                    <div className="mt-3">
+                                                        <textarea
+                                                            placeholder={getDetallePlaceholder(pregunta)}
+                                                            value={data.detalles[pregunta.id] || ''}
+                                                            onChange={(e) => handleDetalleChange(pregunta.id, e.target.value)}
+                                                            rows={2}
+                                                            className="w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-[#1FB7E9] focus:outline-none focus:ring-1 focus:ring-[#1FB7E9]"
+                                                        />
+                                                        {/* {data.catalogo_ids[pregunta.id] && (
+                                                            <p className="mt-1 text-xs text-green-600">
+                                                                ✓ Información registrada en catálogo
+                                                            </p>
+                                                        )} */}
+                                                    </div>
+                                                )}
+                                                
+                                                {getFieldError(`respuestas.${pregunta.id}`) && (
+                                                    <p className="mt-1 text-xs text-red-600">{getFieldError(`respuestas.${pregunta.id}`)}</p>
+                                                )}
                                             </div>
-                                        </label>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
-                                {getFieldError('beneficios') && (
-                                    <p className="mt-1 text-xs text-red-600">{getFieldError('beneficios')}</p>
-                                )}
-                            </div>
+                            )}
                             
-                            <div className="flex justify-start gap-3 border-t border-neutral-100 pt-3">
+                            {/* Botones de acción */}
+                            <div className="flex justify-start gap-3 border-t border-neutral-100 pt-3 mt-4">
                                 <button 
                                     type="submit" 
                                     disabled={processing} 

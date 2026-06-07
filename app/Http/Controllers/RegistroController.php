@@ -7,6 +7,8 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Registro;
 use App\Models\Beneficio;
+use App\Models\Pregunta;
+use App\Models\Catalogo;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Exception;
@@ -18,27 +20,27 @@ use Illuminate\Validation\Rule;
 class RegistroController extends Controller
 {
     /**
-     * Reglas de validación compartidas (sin validación de unicidad)
+     * Reglas de validación compartidas
      */
     private function getReglasValidacion()
     {
         return [
-            'nombre'     => ['required', 'string', 'max:255'],
-            'snombre'    => ['nullable', 'string', 'max:255'],
-            'apellido'   => ['required', 'string', 'max:255'],
-            'sapellido'  => ['nullable', 'string', 'max:255'],
+            'nombre'     => ['required', 'string', 'max:255', 'regex:/^[\p{L}\s]+$/u'],
+            'snombre'    => ['nullable', 'string', 'max:255', 'regex:/^[\p{L}\s]+$/u'],
+            'apellido'   => ['required', 'string', 'max:255', 'regex:/^[\p{L}\s]+$/u'],
+            'sapellido'  => ['nullable', 'string', 'max:255', 'regex:/^[\p{L}\s]+$/u'],
             'colonia'    => ['required', 'string', 'exists:colonias,nombre_de_la_colonia'],
             'calle'      => ['required', 'string', 'exists:calles_aguascalientes,nombre'],
             'municipio'  => ['required', 'string', 'exists:colonias,nombre_del_municipio'],
-            'cp'         => ['nullable', 'numeric'],
-            'genero'     => ['required', 'string'],
+            'cp'         => ['nullable', 'numeric', 'digits:5'],
+            'genero'     => ['required', 'string', Rule::in(['M', 'F', 'OTRO'])],
             'edad'       => ['required', 'numeric', 'min:0', 'max:120'],
-            'nacimiento' => ['required', 'date', 'before_or_equal:today'],
-            'numext'     => ['required', 'numeric'],
-            'numint'     => ['nullable', 'numeric'],
+            'nacimiento' => ['required', 'date', 'before_or_equal:today', 'after_or_equal:1900-01-01'],
+            'numext'     => ['required', 'numeric', 'min:1'],
+            'numint'     => ['nullable', 'numeric', 'min:1'],
             'telefono'   => ['required', 'digits:10'],
-            'beneficios' => ['nullable', 'array'],
-            'beneficios.*' => ['numeric', 'exists:beneficios,id'],
+            'respuestas' => ['nullable', 'array'],
+            'detalles'   => ['nullable', 'array'],
         ];
     }
 
@@ -48,19 +50,25 @@ class RegistroController extends Controller
     private function getMensajesPersonalizados()
     {
         return [
-            'colonia.exists'             => 'La colonia no existe en nuestros registros, verifique o pongase en contacto con un administrador.',
-            'calle.exists'               => 'La calle seleccionada no existe, verifique o pongase en contacto con un administrador.',
-            'municipio.exists'           => 'El municipio seleccionado no existe, verifique o pongase en contacto con un administrador.',
+            'nombre.regex'               => 'El nombre solo puede contener letras y espacios.',
+            'apellido.regex'             => 'El apellido solo puede contener letras y espacios.',
+            'snombre.regex'              => 'El segundo nombre solo puede contener letras y espacios.',
+            'sapellido.regex'            => 'El segundo apellido solo puede contener letras y espacios.',
+            'colonia.exists'             => 'La colonia no existe en nuestros registros.',
+            'calle.exists'               => 'La calle seleccionada no existe.',
+            'municipio.exists'           => 'El municipio seleccionado no existe.',
             'telefono.digits'            => 'El teléfono debe tener exactamente 10 dígitos.',
-            'nacimiento.before_or_equal' => 'La fecha de nacimiento debe ser inferior o igual a la fecha actual.',
+            'nacimiento.before_or_equal' => 'La fecha de nacimiento no puede ser futura.',
+            'nacimiento.after_or_equal'  => 'La fecha de nacimiento no es válida.',
             'edad.min'                   => 'La edad debe ser un número positivo.',
             'edad.max'                   => 'La edad no puede ser mayor a 120 años.',
-            'genero.in'                  => 'El género seleccionado no es válido. Las opciones válidas son: Masculino, Femenino u Otro.',
+            'genero.in'                  => 'El género seleccionado no es válido.',
             'required'                   => 'El campo :attribute es obligatorio.',
             'numeric'                    => 'El campo :attribute debe ser numérico.',
             'digits'                     => 'El campo :attribute debe tener exactamente :digits dígitos.',
-            'genero.required'            => 'Por favor seleccione un género.',
-            'numext.required'            => 'El número exterior es obligatorio.',
+            'cp.digits'                  => 'El código postal debe tener 5 dígitos.',
+            'numext.min'                 => 'El número exterior debe ser mayor a 0.',
+            'numint.min'                 => 'El número interior debe ser mayor a 0.',
         ];
     }
 
@@ -72,9 +80,16 @@ class RegistroController extends Controller
         if (!is_string($cadena)) {
             return $cadena;
         }
-        $buscar = ['á', 'é', 'í', 'ó', 'ú', 'Á', 'É', 'Í', 'Ó', 'Ú', 'à', 'è', 'ì', 'ò', 'ù', 'À', 'È', 'Ì', 'Ò', 'Ù'];
-        $reemplazo = ['a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U', 'a', 'e', 'i', 'o', 'u', 'A', 'E', 'I', 'O', 'U'];
-        return str_replace($buscar, $reemplazo, $cadena);
+        
+        $mapeo = [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u',
+            'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U',
+            'à' => 'a', 'è' => 'e', 'ì' => 'i', 'ò' => 'o', 'ù' => 'u',
+            'À' => 'A', 'È' => 'E', 'Ì' => 'I', 'Ò' => 'O', 'Ù' => 'U',
+            'ñ' => 'ñ', 'Ñ' => 'Ñ' // Mantener Ñ
+        ];
+        
+        return strtr($cadena, $mapeo);
     }
 
     /**
@@ -91,9 +106,16 @@ class RegistroController extends Controller
             }
         }
 
-        // Asegurar que el género venga en mayúsculas
+        // Asegurar que el género venga en mayúsculas y sea válido
         if ($request->has('genero') && is_string($request->genero)) {
-            $request->merge(['genero' => mb_strtoupper(trim($request->genero), 'UTF-8')]);
+            $genero = mb_strtoupper(trim($request->genero), 'UTF-8');
+            $genero = match($genero) {
+                'MASCULINO', 'M' => 'M',
+                'FEMENINO', 'F' => 'F',
+                'OTRO', 'O' => 'OTRO',
+                default => $genero
+            };
+            $request->merge(['genero' => $genero]);
         }
 
         return $request;
@@ -136,17 +158,14 @@ class RegistroController extends Controller
     }
 
     /**
-     * Detectar duplicados (usando LIKE para insensibilidad a mayúsculas/minúsculas)
+     * Detectar duplicados
      */
     private function detectarDuplicados($datos, $excluirId = null)
     {
-        // Convertir a mayúsculas para comparación consistente
         $nombre = mb_strtoupper(trim($datos['nombre']), 'UTF-8');
         $apellido = mb_strtoupper(trim($datos['apellido']), 'UTF-8');
         $nacimiento = $datos['nacimiento'];
 
-        // Usar LIKE para buscar sin importar mayúsculas/minúsculas
-        // PostgreSQL usa ILIKE, MySQL/MariaDB usa LIKE que ya es insensible en algunos casos
         $query = Registro::whereRaw('UPPER(nombre) = ?', [$nombre])
             ->whereRaw('UPPER(apellido) = ?', [$apellido])
             ->where('nacimiento', $nacimiento);
@@ -163,34 +182,35 @@ class RegistroController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Registro::query();
+        try {
+            $query = Registro::query();
 
-        if ($request->filled('nombre')) {
-            $nombre = mb_strtoupper($request->input('nombre'), 'UTF-8');
-            $query->where('nombre', 'LIKE', "%{$nombre}%");
+            if ($request->filled('nombre')) {
+                $nombre = mb_strtoupper($request->input('nombre'), 'UTF-8');
+                $query->where('nombre', 'LIKE', "%{$nombre}%");
+            }
+
+            if ($request->filled('apellido')) {
+                $apellido = mb_strtoupper($request->input('apellido'), 'UTF-8');
+                $query->where('apellido', 'LIKE', "%{$apellido}%");
+            }
+
+            if ($request->filled('nacimiento')) {
+                $query->where('nacimiento', $request->input('nacimiento'));
+            }
+
+            $beneficiarios = $query->orderBy('id', 'desc')->get();
+            $preguntas = Pregunta::where('activa', true)->orderBy('id')->get();
+
+            return Inertia::render('consulta', [
+                'beneficiarios' => $beneficiarios,
+                'preguntas'     => $preguntas,
+                'filtros'       => $request->only(['nombre', 'apellido', 'nacimiento'])
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error en index Registro: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Error al cargar los datos']);
         }
-
-        if ($request->filled('apellido')) {
-            $apellido = mb_strtoupper($request->input('apellido'), 'UTF-8');
-            $query->where('apellido', 'LIKE', "%{$apellido}%");
-        }
-
-        if ($request->filled('nacimiento')) {
-            $query->where('nacimiento', $request->input('nacimiento'));
-        }
-
-        $beneficiarios = $query->orderBy('id', 'desc')->get();
-
-        $beneficios = Beneficio::where('activo', true)
-            ->get(['id', 'nombre', 'descripcion'])
-            ->values()
-            ->toArray();
-
-        return Inertia::render('consulta', [
-            'beneficiarios' => $beneficiarios,
-            'beneficios'    => $beneficios,
-            'filtros'       => $request->only(['nombre', 'snombre', 'apellido', 'sapellido', 'nacimiento'])
-        ]);
     }
 
     /**
@@ -198,11 +218,13 @@ class RegistroController extends Controller
      */
     public function create()
     {
-        $beneficios = Beneficio::where('activo', true)->get(['id', 'nombre', 'descripcion']);
-
-        return Inertia::render('create', [
-            'beneficios' => $beneficios
-        ]);
+        try {
+            $preguntas = Pregunta::where('activa', true)->get();
+            return Inertia::render('create', ['preguntas' => $preguntas]);
+        } catch (\Exception $e) {
+            Log::error('Error en create Registro: ' . $e->getMessage());
+            return back()->withErrors(['error' => 'Error al cargar el formulario']);
+        }
     }
 
     /**
@@ -210,93 +232,118 @@ class RegistroController extends Controller
      */
     public function store(Request $request)
     {
-        // LEER BANDERA PRIMERO: Extraemos el booleano antes de la validación estricta
         $fuerzaBruta = $request->boolean('fuerza_bruta');
 
-        // 1. Limpiar tildes de los datos
+        // 1. Limpieza y preparación de datos
         $request = $this->limpiarYPrepararDatos($request);
+        
+        if ($request->has('telefono')) {
+            $request->merge(['telefono' => str_replace(' ', '', $request->telefono)]);
+        }
 
-        // 2. Validar los datos usando las reglas (SIN validación de unicidad)
+        // 2. Validación
         $datosValidados = $request->validate(
             $this->getReglasValidacion(),
             $this->getMensajesPersonalizados()
         );
 
-        // 3. Extraer beneficios antes de guardar
-        $beneficiosIds = $datosValidados['beneficios'] ?? [];
-        unset($datosValidados['beneficios']);
+        // 3. Extracción de arrays
+        $respuestas = $datosValidados['respuestas'] ?? [];
+        $detalles   = $datosValidados['detalles'] ?? [];
 
-        // 4. Formatear teléfono
-        if (isset($datosValidados['telefono'])) {
-            $datosValidados['telefono'] = $this->formatearTelefono($datosValidados['telefono']);
+        // 4. Preparación de datos del Registro
+        $datosParaCrear = $datosValidados;
+        unset($datosParaCrear['respuestas'], $datosParaCrear['detalles']);
+
+        if (isset($datosParaCrear['telefono'])) {
+            $datosParaCrear['telefono'] = $this->formatearTelefono($datosParaCrear['telefono']);
         }
 
-        // 5. DETECTOR DE DUPLICADOS (Se ignora por completo si $fuerzaBruta es true)
+        // 5. Verificación de duplicados
         if (!$fuerzaBruta) {
-            $duplicados = $this->detectarDuplicados($datosValidados);
-
-            // Si encontramos al menos un registro idéntico, frenamos la inserción
+            $duplicados = $this->detectarDuplicados($datosParaCrear);
             if ($duplicados->isNotEmpty()) {
                 return back()->with([
-                    'advertencia' => '¡Atención! Ya existen personas registradas con datos idénticos.',
-                    'coincidencias' => $duplicados,
+                    'advertencia' => 'Ya existen registros similares.',
+                    'coincidencias' => $duplicados
                 ]);
             }
         }
 
-        // 6. Convertir a mayúsculas
-        $datosFinales = $this->convertirMayusculas($datosValidados);
+        $datosFinales = $this->convertirMayusculas($datosParaCrear);
         $datosFinales['id_user'] = Auth::id();
-
-        if (is_null($datosFinales['sapellido'])) {
+        
+        if (is_null($datosFinales['sapellido'] ?? null)) {
             $datosFinales['papa'] = true;
         }
 
-        // 7. Guardar en base de datos
+        // 6. Transacción
         DB::beginTransaction();
-
+        
         try {
             $nuevoRegistro = Registro::create($datosFinales);
 
-            if (!empty($beneficiosIds)) {
-                $nuevoRegistro->beneficios()->attach($beneficiosIds);
+            if (!empty($respuestas)) {
+                foreach ($respuestas as $preguntaId => $valorRespuesta) {
+                    $valorNormalizado = mb_strtoupper(trim($valorRespuesta), 'UTF-8');
+                    $descripcion = $detalles[$preguntaId] ?? null;
+                    $catalogoId = null;
+
+                    // Validar que el detalle no esté vacío cuando es requerido
+                    if ($descripcion && trim($descripcion) !== '') {
+                        $descripcion = mb_strtoupper(trim($descripcion), 'UTF-8');
+                    } else {
+                        $descripcion = null;
+                    }
+
+                    // LÓGICA DE CATÁLOGO
+                    if ($preguntaId == 6) {
+                        if ($valorNormalizado === 'NO' && $descripcion) {
+                            $catalogo = Catalogo::firstOrCreate([
+                                'pregunta_id' => $preguntaId,
+                                'nombre'      => $descripcion
+                            ]);
+                            $catalogoId = $catalogo->id;
+                        }
+                    } else {
+                        if ($valorNormalizado === 'SI' && $descripcion) {
+                            $catalogo = Catalogo::firstOrCreate([
+                                'pregunta_id' => $preguntaId,
+                                'nombre'      => $descripcion
+                            ]);
+                            $catalogoId = $catalogo->id;
+                        }
+                    }
+
+                    $nuevoRegistro->respuestas()->create([
+                        'pregunta_id' => (int)$preguntaId,
+                        'catalogo_id' => $catalogoId,
+                        'valor_extra' => $valorNormalizado,
+                        'detalle'     => $descripcion,
+                    ]);
+                }
             }
 
             DB::commit();
 
-            Log::info("Registro creado con éxito. ID: {$nuevoRegistro->id}, Usuario: " . Auth::id());
+            Log::info('Registro creado exitosamente', [
+                'id' => $nuevoRegistro->id,
+                'usuario' => Auth::id(),
+                'ip' => $request->ip()
+            ]);
 
-            if ($request->wantsJson()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Registro creado con éxito.',
-                    'redirect' => route('dashboard')
-                ]);
-            }
-
-            return redirect()->route('dashboard')->with('success', '¡Registro completado con éxito!');
+            return redirect()->route('dashboard')->with('success', 'Registro completado con éxito!');
+            
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error al crear registro: ' . $e->getMessage());
-
-            if ($request->wantsJson()) {
-                return response()->json([
-                    'errors' => ['error' => 'Ocurrió un problema al guardar el registro: ' . $e->getMessage()]
-                ], 500);
-            }
-
-            return back()
-                ->withInput()
-                ->withErrors(['error' => 'Ocurrió un problema al guardar el registro: ' . $e->getMessage()]);
+            Log::error('Error en store Registro', [
+                'error' => $e->getMessage(),
+                'usuario' => Auth::id(),
+                'data' => $datosFinales
+            ]);
+            
+            return back()->withErrors(['error' => 'Error al guardar: ' . $e->getMessage()]);
         }
-    }
-
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
-    {
-        //
     }
 
     /**
@@ -304,7 +351,6 @@ class RegistroController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        // LEER BANDERA PRIMERO para actualización también
         $fuerzaBruta = $request->boolean('fuerza_bruta');
 
         // 1. Encontrar el registro
@@ -313,21 +359,26 @@ class RegistroController extends Controller
         // 2. Limpiar tildes de los datos
         $request = $this->limpiarYPrepararDatos($request);
 
-        // 3. Validar los datos usando las reglas (SIN validación de unicidad)
+        if ($request->has('telefono')) {
+            $request->merge(['telefono' => str_replace(' ', '', $request->telefono)]);
+        }
+
+        // 3. Validar los datos
         $datosValidados = $request->validate(
             $this->getReglasValidacion(),
             $this->getMensajesPersonalizados()
         );
 
-        // 4. Extraer beneficios antes de actualizar
-        $beneficiosIds = $datosValidados['beneficios'] ?? [];
-        unset($datosValidados['beneficios']);
+        // 4. Extraer respuestas y detalles
+        $respuestas = $datosValidados['respuestas'] ?? [];
+        $detalles = $datosValidados['detalles'] ?? [];
+        
+        unset($datosValidados['respuestas']);
+        unset($datosValidados['detalles']);
 
-        // 5. DETECTOR DE DUPLICADOS para actualización (Se ignora por completo si $fuerzaBruta es true)
+        // 5. Detector de duplicados
         if (!$fuerzaBruta) {
             $duplicados = $this->detectarDuplicados($datosValidados, $id);
-
-            // Si encontramos al menos un registro idéntico, frenamos la actualización
             if ($duplicados->isNotEmpty()) {
                 return back()->with([
                     'advertencia' => '¡Atención! Ya existen personas registradas con datos idénticos.',
@@ -343,9 +394,11 @@ class RegistroController extends Controller
 
         // 7. Convertir a mayúsculas
         $datosFinales = $this->convertirMayusculas($datosValidados);
-        if (is_null($datosFinales['sapellido'])) {
+        
+        if (is_null($datosFinales['sapellido'] ?? null)) {
             $datosFinales['papa'] = true;
         }
+        
         $datosFinales['id_user'] = Auth::id();
 
         // 8. Actualizar en base de datos
@@ -353,32 +406,89 @@ class RegistroController extends Controller
 
         try {
             $beneficiario->update($datosFinales);
-            $beneficiario->beneficios()->sync($beneficiosIds);
+
+            // Actualizar respuestas
+            $beneficiario->respuestas()->delete();
+            
+            if (!empty($respuestas)) {
+                foreach ($respuestas as $preguntaId => $valorRespuesta) {
+                    $valorNormalizado = mb_strtoupper(trim($valorRespuesta), 'UTF-8');
+                    $detalle = $detalles[$preguntaId] ?? null;
+                    $catalogoId = null;
+
+                    if ($detalle && trim($detalle) !== '') {
+                        $detalle = mb_strtoupper(trim($detalle), 'UTF-8');
+                    } else {
+                        $detalle = null;
+                    }
+
+                    // Lógica de catálogo
+                    if ($preguntaId == 6) {
+                        if ($valorNormalizado === 'NO' && $detalle) {
+                            $catalogo = Catalogo::firstOrCreate([
+                                'pregunta_id' => $preguntaId,
+                                'nombre'      => $detalle
+                            ]);
+                            $catalogoId = $catalogo->id;
+                        }
+                    } else {
+                        if ($valorNormalizado === 'SI' && $detalle) {
+                            $catalogo = Catalogo::firstOrCreate([
+                                'pregunta_id' => $preguntaId,
+                                'nombre'      => $detalle
+                            ]);
+                            $catalogoId = $catalogo->id;
+                        }
+                    }
+
+                    $beneficiario->respuestas()->create([
+                        'pregunta_id' => (int)$preguntaId,
+                        'catalogo_id' => $catalogoId,
+                        'valor_extra' => $valorNormalizado,
+                        'detalle'     => $detalle,
+                    ]);
+                }
+            }
 
             DB::commit();
 
-            Log::info("Registro actualizado con éxito. ID: {$id}, Usuario: " . Auth::id());
+            Log::info('Registro actualizado con éxito', [
+                'id' => $id,
+                'usuario' => Auth::id(),
+                'ip' => $request->ip()
+            ]);
 
             if ($request->wantsJson()) {
+                $beneficiarioActualizado = Registro::with(['respuestas.catalogo'])->find($id);
+                
                 return response()->json([
                     'success' => true,
-                    'message' => 'Registro actualizado con éxito.'
+                    'message' => 'Registro actualizado con éxito.',
+                    'data' => [
+                        'beneficiario' => $beneficiarioActualizado,
+                        'respuestas' => $beneficiarioActualizado->respuestas
+                    ]
                 ]);
             }
 
             return redirect()->back()->with('success', 'Registro actualizado de forma correcta.');
+            
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error al actualizar registro ID ' . $id . ': ' . $e->getMessage());
+            Log::error('Error al actualizar registro', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'usuario' => Auth::id()
+            ]);
 
             if ($request->wantsJson()) {
                 return response()->json([
-                    'errors' => ['error' => 'Ocurrió un problema al actualizar el registro: ' . $e->getMessage()]
+                    'errors' => ['error' => 'Error al actualizar: ' . $e->getMessage()]
                 ], 500);
             }
 
             return redirect()->back()->withErrors([
-                'error' => 'Ocurrió un error interno al procesar la actualización. Inténtelo de nuevo.'
+                'error' => 'Ocurrió un error interno al procesar la actualización.'
             ]);
         }
     }
@@ -393,20 +503,34 @@ class RegistroController extends Controller
         DB::beginTransaction();
 
         try {
+            // Eliminar respuestas primero
+            $beneficiario->respuestas()->delete();
+            
+            // Eliminar relaciones con beneficios si existen
             $beneficiario->beneficios()->detach();
+            
+            // Eliminar el registro
             $beneficiario->delete();
 
             DB::commit();
 
-            Log::info("Registro eliminado con éxito. ID: {$id}, Usuario: " . Auth::id());
+            Log::info('Registro eliminado con éxito', [
+                'id' => $id,
+                'usuario' => Auth::id()
+            ]);
 
             return redirect()->back()->with('success', 'El registro ha sido eliminado exitosamente.');
+            
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Error al eliminar registro ID ' . $id . ': ' . $e->getMessage());
+            Log::error('Error al eliminar registro', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'usuario' => Auth::id()
+            ]);
 
             return redirect()->back()->withErrors([
-                'error' => 'No se pudo eliminar el registro debido a dependencias en el sistema.'
+                'error' => 'No se pudo eliminar el registro: ' . $e->getMessage()
             ]);
         }
     }
